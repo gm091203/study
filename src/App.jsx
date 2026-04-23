@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import ProgressBar from './components/ProgressBar';
 import StudyCard from './components/StudyCard';
 import AddStudyModal from './components/AddStudyModal';
+import VideoRecorder from './components/VideoRecorder';
 import { INITIAL_ROUTINE } from './data/routine';
+import { saveVideo, getVideo, deleteVideo } from './utils/db';
 
 function App() {
   const [studies, setStudies] = useState(() => {
@@ -10,15 +12,37 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [recordingStudy, setRecordingStudy] = useState(null);
+  const [playingVideo, setPlayingVideo] = useState(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(Notification.permission === 'granted');
   const [lastNotified, setLastNotified] = useState({ id: null, type: null, time: null });
 
   // Request Notification Permission
   const requestPermission = async () => {
-    const permission = await Notification.requestPermission();
-    setNotificationsEnabled(permission === 'granted');
-    if (permission === 'granted') {
-      new Notification('알림이 설정되었습니다!', { body: '이제 공부 시간에 맞춰 알람을 보내드릴게요.' });
+    if (!('Notification' in window)) {
+      alert('이 브라우저는 알림 기능을 지원하지 않습니다.');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      alert('브라우저 설정에서 알림 권한이 차단되어 있습니다. 주소창 옆의 자물쇠 아이콘을 눌러 알림을 허용해 주세요!');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationsEnabled(permission === 'granted');
+      if (permission === 'granted') {
+        new Notification('알림이 설정되었습니다!', { 
+          body: '이제 공부 시간에 맞춰 알람을 보내드릴게요.',
+          icon: '/study/favicon.svg'
+        });
+      }
+    } catch (error) {
+      // Fallback for older browsers
+      Notification.requestPermission((permission) => {
+        setNotificationsEnabled(permission === 'granted');
+      });
     }
   };
 
@@ -83,8 +107,34 @@ function App() {
     setStudies(studies.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
   };
 
-  const deleteStudy = (id) => {
+  const deleteStudy = async (id) => {
     setStudies(studies.filter(s => s.id !== id));
+    await deleteVideo(id);
+  };
+
+  const handleSaveVideo = async (id, blob) => {
+    await saveVideo(id, blob);
+    setStudies(studies.map(s => s.id === id ? { ...s, hasVideo: true } : s));
+  };
+
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const videoPlayerRef = useRef(null);
+
+  useEffect(() => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed, playingVideo]);
+
+  const handlePlayVideo = async (id) => {
+    const blob = await getVideo(id);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      setPlayingVideo(url);
+      setPlaybackSpeed(1); // Reset speed on new video
+    } else {
+      alert('저장된 영상을 찾을 수 없습니다.');
+    }
   };
 
   const loadDefaultRoutine = () => {
@@ -182,6 +232,8 @@ function App() {
               study={study} 
               onToggle={toggleStudy} 
               onDelete={deleteStudy} 
+              onRecord={(id, title) => setRecordingStudy({ id, title })}
+              onPlay={handlePlayVideo}
             />
           ))
         ) : (
@@ -197,6 +249,70 @@ function App() {
           onAdd={addStudy} 
           onClose={() => setIsModalOpen(false)} 
         />
+      )}
+
+      {recordingStudy && (
+        <VideoRecorder 
+          studyId={recordingStudy.id}
+          studyTitle={recordingStudy.title}
+          onSave={handleSaveVideo}
+          onClose={() => setRecordingStudy(null)}
+        />
+      )}
+
+      {playingVideo && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 3000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '600px', padding: '24px' }}>
+            <video ref={videoPlayerRef} src={playingVideo} controls autoPlay style={{ width: '100%', borderRadius: '12px' }} />
+            
+            <div style={{ marginTop: '20px' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', textAlign: 'center' }}>
+                재생 배속: <strong>{playbackSpeed}x</strong>
+              </p>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                {[1, 2, 5, 10, 20, 50].map(speed => (
+                  <button 
+                    key={speed}
+                    onClick={() => setPlaybackSpeed(speed)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--glass-border)',
+                      backgroundColor: playbackSpeed === speed ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <a 
+                href={playingVideo} 
+                download="study-record.webm" 
+                className="btn btn-primary" 
+                style={{ flex: 1, textDecoration: 'none' }}
+              >
+                다운로드
+              </a>
+              <button 
+                onClick={() => { URL.revokeObjectURL(playingVideo); setPlayingVideo(null); }} 
+                className="btn" style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)' }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
