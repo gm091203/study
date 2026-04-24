@@ -19,7 +19,9 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [recordingStudy, setRecordingStudy] = useState(null);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(Notification.permission === 'granted');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted'
+  );
   const [lastNotified, setLastNotified] = useState({ id: null, type: null, time: null });
 
   // Request Notification Permission
