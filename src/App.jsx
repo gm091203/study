@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ProgressBar from './components/ProgressBar';
 import StudyCard from './components/StudyCard';
 import AddStudyModal from './components/AddStudyModal';
