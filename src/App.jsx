@@ -8,8 +8,13 @@ import { saveVideo, getVideo, deleteVideo } from './utils/db';
 
 function App() {
   const [studies, setStudies] = useState(() => {
-    const saved = localStorage.getItem('study_sessions');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('study_sessions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse studies from localStorage', e);
+      return [];
+    }
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [recordingStudy, setRecordingStudy] = useState(null);
